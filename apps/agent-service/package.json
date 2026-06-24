@@ -1,13 +1,35 @@
 {
   "name": "@repo/agent-service",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "description": "Gatekeeper Agent Service — Fastify backend with Gemini LLM, MCP clients, policy enforcement",
+  "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx --watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.33.4"
+  "packageManager": "pnpm@10.33.4",
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@google/genai": "^2.10.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@repo/db": "workspace:*",
+    "@repo/policy-engine": "workspace:*",
+    "@repo/types": "workspace:*",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.4.0",
+    "fastify-plugin": "^6.0.0",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^20.19.41",
+    "tsx": "^4.22.4"
+  }
 }

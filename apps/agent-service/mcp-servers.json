@@ -1,0 +1,16 @@
+{
+  "servers": [
+    {
+      "name": "vault-mcp",
+      "command": "node",
+      "args": ["../vault-mcp/dist/index.js"],
+      "env": {}
+    },
+    {
+      "name": "context7",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "env": {}
+    }
+  ]
+}

@@ -29,10 +29,10 @@ export function registerDeleteSecret(
         .describe("The secret key to permanently delete"),
     },
     async ({ namespace, key }) => {
-      const deleted = store.deleteSecret(namespace, key)
+      const deleted = await store.deleteSecret(namespace, key)
 
       if (!deleted) {
-        const keys = store.listKeys(namespace)
+        const keys = await store.listKeys(namespace)
         const suggestion =
           keys.length > 0
             ? `Available keys in "${namespace}": ${keys.join(", ")}`

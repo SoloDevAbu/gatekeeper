@@ -1,114 +1,104 @@
 /**
- * VaultStore — In-memory secret storage with namespace isolation.
+ * VaultStore — Database-backed secret storage with namespace isolation.
  *
- * Structure: Map<namespace, Map<key, value>>
+ * Uses Drizzle ORM to query the `vault_secrets` PostgreSQL table.
+ * Each secret has: namespace, key, value, createdAt, updatedAt.
  *
- * Pre-seeded with realistic sample data across dev/staging/prod namespaces
- * to make the demo compelling and the guardrail scenarios obvious.
+ * Pre-seeds the DB with realistic sample data across dev/staging/prod
+ * namespaces on first run (when table is empty).
  */
 
 import crypto from "node:crypto"
+import {
+  countVaultSecrets,
+  insertVaultSecrets,
+  listVaultKeys,
+  listVaultNamespaces,
+  getVaultSecret,
+  upsertVaultSecret,
+  deleteVaultSecret,
+} from "@repo/db/queries"
 
 export class VaultStore {
-  private store: Map<string, Map<string, string>>
-
-  constructor() {
-    this.store = new Map()
-    this.seed()
-  }
-
   /**
-   * Pre-seed with realistic secrets across multiple namespaces.
-   * This makes the demo powerful — you can show:
-   *   - "list_secrets dev" → works (no guardrails triggered)
-   *   - "get_secret prod/stripe_key" → blocked by namespace restriction
-   *   - "delete_secret prod/db_password" → blocked by tool block rule
+   * Seed the database with sample secrets if the table is empty.
+   * Safe to call on every startup — it's a no-op when data exists.
    */
-  private seed(): void {
-    this.store.set(
-      "dev",
-      new Map([
-        ["db_password", "dev-pass-f8a3b1c2"],
-        ["api_key", "dev-ak-7d2e9f4a"],
-        ["jwt_secret", "dev-jwt-b3c8d5e1"],
-        ["redis_url", "redis://localhost:6379"],
-      ])
-    )
+  async seed(): Promise<void> {
+    const count = await countVaultSecrets()
+    if (count > 0) {
+      console.error("[vault-store] Secrets already exist in DB, skipping seed")
+      return
+    }
 
-    this.store.set(
-      "staging",
-      new Map([
-        ["db_password", "stg-pass-a1b2c3d4"],
-        ["api_key", "stg-ak-e5f6g7h8"],
-        ["jwt_secret", "stg-jwt-i9j0k1l2"],
-        ["stripe_key", "sk_test_stg_4eC39HqLyjWDarjtT1zdp7dc"],
-      ])
-    )
+    console.error("[vault-store] Seeding vault_secrets table with sample data...")
 
-    this.store.set(
-      "prod",
-      new Map([
-        ["db_password", "prod-pass-HIGHLY-SENSITIVE"],
-        ["stripe_key", "sk_live_HIGHLY-SENSITIVE-PROD-KEY"],
-        ["jwt_secret", "prod-jwt-HIGHLY-SENSITIVE"],
-        ["openai_key", "sk-prod-HIGHLY-SENSITIVE-AI-KEY"],
-        ["webhook_secret", "whsec_prod-HIGHLY-SENSITIVE"],
-      ])
-    )
+    await insertVaultSecrets([
+      // ─── dev namespace ───
+      { namespace: "dev", key: "db_password", value: "dev-pass-f8a3b1c2" },
+      { namespace: "dev", key: "api_key", value: "dev-ak-7d2e9f4a" },
+      { namespace: "dev", key: "jwt_secret", value: "dev-jwt-b3c8d5e1" },
+      { namespace: "dev", key: "redis_url", value: "redis://localhost:6379" },
+
+      // ─── staging namespace ───
+      { namespace: "staging", key: "db_password", value: "stg-pass-a1b2c3d4" },
+      { namespace: "staging", key: "api_key", value: "stg-ak-e5f6g7h8" },
+      { namespace: "staging", key: "jwt_secret", value: "stg-jwt-i9j0k1l2" },
+      { namespace: "staging", key: "stripe_key", value: "sk_test_stg_4eC39HqLyjWDarjtT1zdp7dc" },
+
+      // ─── prod namespace ───
+      { namespace: "prod", key: "db_password", value: "prod-pass-HIGHLY-SENSITIVE" },
+      { namespace: "prod", key: "stripe_key", value: "sk_live_HIGHLY-SENSITIVE-PROD-KEY" },
+      { namespace: "prod", key: "jwt_secret", value: "prod-jwt-HIGHLY-SENSITIVE" },
+      { namespace: "prod", key: "openai_key", value: "sk-prod-HIGHLY-SENSITIVE-AI-KEY" },
+      { namespace: "prod", key: "webhook_secret", value: "whsec_prod-HIGHLY-SENSITIVE" },
+    ])
+
+    console.error("[vault-store] Seed complete: dev (4), staging (4), prod (5)")
   }
 
   // ─── Operations ─────────────────────────────────────────────────────────
 
   /** List all secret keys in a namespace (values are NOT returned). */
-  listKeys(namespace: string): string[] {
-    const ns = this.store.get(namespace)
-    if (!ns) return []
-    return Array.from(ns.keys())
+  async listKeys(namespace: string): Promise<string[]> {
+    return listVaultKeys(namespace)
   }
 
   /** Get all available namespaces. */
-  listNamespaces(): string[] {
-    return Array.from(this.store.keys())
+  async listNamespaces(): Promise<string[]> {
+    return listVaultNamespaces()
   }
 
   /** Retrieve a secret's value. Returns null if not found. */
-  getSecret(namespace: string, key: string): string | null {
-    const ns = this.store.get(namespace)
-    if (!ns) return null
-    return ns.get(key) ?? null
+  async getSecret(namespace: string, key: string): Promise<string | null> {
+    return getVaultSecret(namespace, key)
   }
 
-  /** Create or update a secret. Creates the namespace if it doesn't exist. */
-  setSecret(namespace: string, key: string, value: string): void {
-    let ns = this.store.get(namespace)
-    if (!ns) {
-      ns = new Map()
-      this.store.set(namespace, ns)
-    }
-    ns.set(key, value)
+  /** Create or update a secret. Creates the namespace implicitly. */
+  async setSecret(namespace: string, key: string, value: string): Promise<void> {
+    await upsertVaultSecret(namespace, key, value)
   }
 
   /** Delete a secret. Returns true if the secret existed and was deleted. */
-  deleteSecret(namespace: string, key: string): boolean {
-    const ns = this.store.get(namespace)
-    if (!ns) return false
-    return ns.delete(key)
+  async deleteSecret(namespace: string, key: string): Promise<boolean> {
+    return deleteVaultSecret(namespace, key)
   }
 
   /**
    * Rotate a secret — generate a new cryptographically random value.
    * Returns the new value. Throws if the secret doesn't exist.
    */
-  rotateSecret(namespace: string, key: string, length: number = 32): string {
-    const ns = this.store.get(namespace)
-    if (!ns || !ns.has(key)) {
+  async rotateSecret(namespace: string, key: string, length: number = 32): Promise<string> {
+    const existing = await this.getSecret(namespace, key)
+
+    if (existing === null) {
       throw new Error(
         `Secret "${key}" not found in namespace "${namespace}". Cannot rotate a non-existent secret.`
       )
     }
 
     const newValue = crypto.randomBytes(length).toString("hex").slice(0, length)
-    ns.set(key, newValue)
+    await this.setSecret(namespace, key, newValue)
     return newValue
   }
 }

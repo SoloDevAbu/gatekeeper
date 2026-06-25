@@ -30,10 +30,10 @@ export function registerGetSecret(
         ),
     },
     async ({ namespace, key }) => {
-      const value = store.getSecret(namespace, key)
+      const value = await store.getSecret(namespace, key)
 
       if (value === null) {
-        const keys = store.listKeys(namespace)
+        const keys = await store.listKeys(namespace)
         const suggestion =
           keys.length > 0
             ? `Available keys in "${namespace}": ${keys.join(", ")}`

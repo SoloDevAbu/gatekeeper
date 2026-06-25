@@ -11,11 +11,18 @@
  *   - rotate_secret: Generate a new random value (HIGH risk)
  *
  * Transport: stdio (JSON-RPC over stdin/stdout)
- * Storage: In-memory Map with pre-seeded dev/staging/prod namespaces
+ * Storage: PostgreSQL via Drizzle ORM (vault_secrets table)
  *
  * IMPORTANT: All logging goes to stderr to avoid corrupting the
  * JSON-RPC message stream on stdout.
  */
+
+import dotenv from "dotenv"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: path.resolve(__dirname, "../../../.env") })
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
@@ -26,8 +33,6 @@ import { registerSetSecret } from "./tools/set-secret.js"
 import { registerDeleteSecret } from "./tools/delete-secret.js"
 import { registerRotateSecret } from "./tools/rotate-secret.js"
 
-// ─── Initialize ──────────────────────────────────────────────────────────────
-
 const store = new VaultStore()
 
 const server = new McpServer({
@@ -35,23 +40,21 @@ const server = new McpServer({
   version: "1.0.0",
 })
 
-// ─── Register Tools ──────────────────────────────────────────────────────────
-
 registerListSecrets(server, store)
 registerGetSecret(server, store)
 registerSetSecret(server, store)
 registerDeleteSecret(server, store)
 registerRotateSecret(server, store)
 
-// ─── Connect Transport ───────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  await store.seed()
+
   const transport = new StdioServerTransport()
   await server.connect(transport)
 
-  // All logging to stderr — stdout is reserved for JSON-RPC
   console.error("[vault-mcp] Server started successfully")
-  console.error("[vault-mcp] Pre-seeded namespaces: dev, staging, prod")
+  console.error("[vault-mcp] Storage: PostgreSQL (vault_secrets table)")
   console.error("[vault-mcp] Registered 5 tools: list_secrets, get_secret, set_secret, delete_secret, rotate_secret")
 }
 

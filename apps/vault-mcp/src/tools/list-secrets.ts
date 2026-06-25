@@ -24,7 +24,7 @@ export function registerListSecrets(
         ),
     },
     async ({ namespace }) => {
-      const namespaces = store.listNamespaces()
+      const namespaces = await store.listNamespaces()
 
       if (!namespaces.includes(namespace)) {
         return {
@@ -38,7 +38,7 @@ export function registerListSecrets(
         }
       }
 
-      const keys = store.listKeys(namespace)
+      const keys = await store.listKeys(namespace)
 
       return {
         content: [

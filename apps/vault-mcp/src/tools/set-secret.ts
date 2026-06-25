@@ -34,8 +34,8 @@ export function registerSetSecret(
         .describe("The secret value to store"),
     },
     async ({ namespace, key, value }) => {
-      const existed = store.getSecret(namespace, key) !== null
-      store.setSecret(namespace, key, value)
+      const existed = (await store.getSecret(namespace, key)) !== null
+      await store.setSecret(namespace, key, value)
 
       return {
         content: [

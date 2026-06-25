@@ -39,7 +39,7 @@ export function registerRotateSecret(
     },
     async ({ namespace, key, length }) => {
       try {
-        const newValue = store.rotateSecret(namespace, key, length)
+        const newValue = await store.rotateSecret(namespace, key, length)
 
         return {
           content: [

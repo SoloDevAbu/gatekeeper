@@ -44,9 +44,11 @@ export default function ConversationPage() {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const firstMessageSent = useRef(false);
 
+  const API_BASE = process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:3001";
+
   const { events, isConnected, setEvents } = useSSE<SSEEvent>(
     conversationId
-      ? `http://localhost:3001/stream/agent/${conversationId}`
+      ? `${API_BASE}/stream/agent/${conversationId}`
       : null
   );
 
@@ -59,7 +61,7 @@ export default function ConversationPage() {
     async function loadHistory() {
       try {
         const res = await fetch(
-          `http://localhost:3001/api/conversations/${conversationId}`
+          `${API_BASE}/api/conversations/${conversationId}`
         );
         const logs: { role: string; content: string; createdAt: string }[] =
           await res.json();
@@ -132,7 +134,7 @@ export default function ConversationPage() {
     setIsLoading(true);
 
     try {
-      await fetch("http://localhost:3001/api/chat", {
+      await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, conversationId }),
@@ -156,7 +158,7 @@ export default function ConversationPage() {
     decision: "APPROVED" | "DENIED"
   ) => {
     try {
-      await fetch(`http://localhost:3001/api/approvals/${approvalId}/decide`, {
+      await fetch(`${API_BASE}/api/approvals/${approvalId}/decide`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision }),

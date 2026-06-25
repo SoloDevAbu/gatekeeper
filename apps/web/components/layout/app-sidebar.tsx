@@ -52,6 +52,8 @@ export function AppSidebar() {
     ConversationSummary[]
   >([]);
 
+  const API_BASE = process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:3001";
+
   // Fetch conversation list whenever the route changes (catches new conversations)
   React.useEffect(() => {
     fetchConversations();
@@ -59,7 +61,7 @@ export function AppSidebar() {
 
   async function fetchConversations() {
     try {
-      const res = await fetch("http://localhost:3001/api/conversations");
+      const res = await fetch(`${API_BASE}/api/conversations`);
       if (!res.ok) return;
       const data = await res.json();
       setConversations(Array.isArray(data) ? data : []);

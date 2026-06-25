@@ -20,10 +20,12 @@ export default function ServersPage() {
     fetchServers()
   }, [])
 
+  const API_BASE = process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:3001"
+
   const fetchServers = async () => {
     setIsLoading(true)
     try {
-      const res = await fetch("http://localhost:3001/api/servers")
+      const res = await fetch(`${API_BASE}/api/servers`)
       const data = await res.json()
       // Fallback if API is not yet implemented or returns error
       setServers(Array.isArray(data) ? data : [])

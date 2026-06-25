@@ -43,8 +43,10 @@ export default function PoliciesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   
+  const API_BASE = process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:3001"
+  
   // SSE for live policy updates
-  const { events } = useSSE<{type: string, data: any}>("http://localhost:3001/stream/policies")
+  const { events } = useSSE<{type: string, data: any}>(`${API_BASE}/stream/policies`)
 
   const [formData, setFormData] = useState({
     type: "TOOL_BLOCK",
@@ -67,7 +69,7 @@ export default function PoliciesPage() {
 
   const fetchPolicies = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/policies")
+      const res = await fetch(`${API_BASE}/api/policies`)
       const data = await res.json()
       setRules(data)
     } catch (err) {
@@ -79,7 +81,7 @@ export default function PoliciesPage() {
 
   const handleToggle = async (id: string, enabled: boolean) => {
     try {
-      await fetch(`http://localhost:3001/api/policies/${id}/toggle`, {
+      await fetch(`${API_BASE}/api/policies/${id}/toggle`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled })
@@ -93,7 +95,7 @@ export default function PoliciesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      await fetch(`http://localhost:3001/api/policies/${id}`, {
+      await fetch(`${API_BASE}/api/policies/${id}`, {
         method: "DELETE"
       })
       setRules(rules.filter(r => r.id !== id))
@@ -107,7 +109,7 @@ export default function PoliciesPage() {
     const action = TYPE_TO_ACTION[formData.type] ?? "BLOCK"
 
     try {
-      await fetch("http://localhost:3001/api/policies", {
+      await fetch(`${API_BASE}/api/policies`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

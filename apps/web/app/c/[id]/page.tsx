@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useSSE } from "@/hooks/use-sse";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,10 @@ import {
   ShieldAlert,
   CheckCircle2,
   XCircle,
+  Clock,
 } from "lucide-react";
+
+type ApprovalDecision = "APPROVED" | "DENIED" | "EXPIRED";
 
 type EventType =
   | "thinking"
@@ -35,6 +38,52 @@ interface SSEEvent {
   data: any;
 }
 
+// ─── useCountdown ─────────────────────────────────────────────────────────────
+// Returns a formatted "M:SS" string that counts down to `expiresAt`.
+// Updates every second. Returns "0:00" when expired.
+function useCountdown(expiresAt: string | undefined): string {
+  const calc = useCallback(() => {
+    if (!expiresAt) return "0:00";
+    const remaining = Math.max(0, new Date(expiresAt).getTime() - Date.now());
+    const totalSecs = Math.floor(remaining / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  }, [expiresAt]);
+
+  const [display, setDisplay] = useState(calc);
+
+  useEffect(() => {
+    setDisplay(calc());
+    const interval = setInterval(() => setDisplay(calc()), 1000);
+    return () => clearInterval(interval);
+  }, [calc]);
+
+  return display;
+}
+
+// ─── ApprovalCountdown ────────────────────────────────────────────────────────
+// Small badge rendered inside a pending approval card.
+function ApprovalCountdown({ expiresAt }: { expiresAt: string }) {
+  const countdown = useCountdown(expiresAt);
+  const isUrgent =
+    new Date(expiresAt).getTime() - Date.now() < 60_000; // < 1 min
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+        isUrgent
+          ? "bg-red-500/15 text-red-600 dark:text-red-400"
+          : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+      }`}
+    >
+      <Clock className="h-3 w-3" />
+      Expires in {countdown}
+    </span>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ConversationPage() {
   const params = useParams<{ id: string }>();
   const conversationId = params.id;
@@ -54,19 +103,21 @@ export default function ConversationPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load conversation history from the DB on first mount
+  // Load conversation history + pending approvals from the DB on first mount.
   useEffect(() => {
     if (!conversationId || historyLoaded) return;
 
     async function loadHistory() {
       try {
-        const res = await fetch(
-          `${API_BASE}/api/conversations/${conversationId}`
-        );
-        const logs: { role: string; content: string; createdAt: string }[] =
-          await res.json();
+        // 1. Chat history (user + assistant messages)
+        const [logsRes, pendingRes] = await Promise.all([
+          fetch(`${API_BASE}/api/conversations/${conversationId}`),
+          fetch(`${API_BASE}/api/approvals/pending/${conversationId}`),
+        ]);
 
-        // Map DB logs to SSE-style events so the existing renderer handles them
+        const logs: { role: string; content: string; createdAt: string }[] =
+          await logsRes.json();
+
         const historyEvents: SSEEvent[] = logs
           .filter((log) => log.role === "user" || log.role === "assistant")
           .map((log) => ({
@@ -76,8 +127,41 @@ export default function ConversationPage() {
             data: { content: log.content },
           }));
 
-        if (historyEvents.length > 0) {
-          setEvents(historyEvents);
+        // 2. Re-hydrate any still-PENDING approvals so the user can act on them
+        //    even after navigating away and returning.
+        let approvalEvents: SSEEvent[] = [];
+        if (pendingRes.ok) {
+          const pendingApprovals: {
+            approvalId: string;
+            toolName: string;
+            serverName: string;
+            arguments: Record<string, unknown>;
+            expiresAt: string;
+            createdAt: string;
+          }[] = await pendingRes.json();
+
+          approvalEvents = pendingApprovals.map((a) => ({
+            type: "approval_requested" as const,
+            timestamp: a.createdAt,
+            conversationId,
+            data: {
+              approvalId: a.approvalId,
+              toolName: a.toolName,
+              serverName: a.serverName,
+              arguments: a.arguments,
+              expiresAt: a.expiresAt,
+            },
+          }));
+        }
+
+        // Merge and sort chronologically so approvals appear in the right place
+        const allEvents = [...historyEvents, ...approvalEvents].sort(
+          (a, b) =>
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+
+        if (allEvents.length > 0) {
+          setEvents(allEvents);
         }
       } catch (err) {
         console.error("Failed to load conversation history:", err);
@@ -87,11 +171,9 @@ export default function ConversationPage() {
     }
 
     loadHistory();
-  }, [conversationId, historyLoaded, setEvents]);
+  }, [conversationId, historyLoaded, setEvents, API_BASE]);
 
-  // If this is a brand-new conversation started from the landing page,
-  // the first message was stashed in sessionStorage. Auto-send it once
-  // history is loaded (ensures we don't double-send on a reload).
+  // Auto-send the first message stashed in sessionStorage (new conversations).
   useEffect(() => {
     if (!conversationId || !historyLoaded || firstMessageSent.current) return;
 
@@ -99,11 +181,9 @@ export default function ConversationPage() {
     const firstMessage = sessionStorage.getItem(key);
     if (!firstMessage) return;
 
-    // Remove immediately so a page reload doesn't re-send
     sessionStorage.removeItem(key);
     firstMessageSent.current = true;
 
-    // Slight delay so the SSE connection has time to open
     const timer = setTimeout(() => {
       sendMessage(firstMessage);
     }, 300);
@@ -120,7 +200,6 @@ export default function ConversationPage() {
   const sendMessage = async (text: string) => {
     if (!text.trim() || !conversationId) return;
 
-    // Optimistically append the user message
     setEvents((prev) => [
       ...prev,
       {
@@ -320,57 +399,93 @@ export default function ConversationPage() {
                     e.data?.approvalId === evt.data.approvalId
                 );
 
+              const decision: ApprovalDecision | undefined =
+                decisionEvent?.data?.decision;
+              const isPending = !decisionEvent;
+              const isApproved = decision === "APPROVED";
+              const isExpired = decision === "EXPIRED";
+              // DENIED covers both explicit rejection and expired (fallback)
+
               return (
                 <Card
                   key={idx}
                   className={`max-w-[85%] p-4 shadow-sm transition-colors ${
-                    decisionEvent
-                      ? decisionEvent.data.decision === "APPROVED"
-                        ? "border-green-500/30 bg-green-500/5"
-                        : "border-red-500/30 bg-red-500/5"
-                      : "border-orange-500/40 bg-orange-500/10 shadow-orange-500/10"
+                    isPending
+                      ? "border-orange-500/40 bg-orange-500/10 shadow-orange-500/10"
+                      : isApproved
+                      ? "border-green-500/30 bg-green-500/5"
+                      : isExpired
+                      ? "border-amber-500/30 bg-amber-500/5"
+                      : "border-red-500/30 bg-red-500/5"
                   }`}
                 >
+                  {/* Header row */}
                   <div className="mb-2 flex items-center gap-2">
-                    <ShieldAlert
-                      className={`h-4 w-4 ${
-                        decisionEvent
-                          ? decisionEvent.data.decision === "APPROVED"
-                            ? "text-green-500"
-                            : "text-red-500"
-                          : "animate-pulse text-orange-500"
-                      }`}
-                    />
+                    {isPending ? (
+                      <ShieldAlert className="h-4 w-4 animate-pulse text-orange-500" />
+                    ) : isApproved ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : isExpired ? (
+                      <Clock className="h-4 w-4 text-amber-500" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-500" />
+                    )}
+
                     <span
                       className={`font-mono text-xs font-bold ${
-                        decisionEvent
-                          ? decisionEvent.data.decision === "APPROVED"
-                            ? "text-green-600 dark:text-green-400"
-                            : "text-red-600 dark:text-red-400"
-                          : "text-orange-600 dark:text-orange-400"
+                        isPending
+                          ? "text-orange-600 dark:text-orange-400"
+                          : isApproved
+                          ? "text-green-600 dark:text-green-400"
+                          : isExpired
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-red-600 dark:text-red-400"
                       }`}
                     >
-                      {decisionEvent
-                        ? `DECISION: ${decisionEvent.data.decision}`
-                        : `ACTION REQUIRED: ${evt.data.toolName}`}
+                      {isPending
+                        ? `ACTION REQUIRED: ${evt.data.toolName}`
+                        : isApproved
+                        ? `DECISION: APPROVED`
+                        : isExpired
+                        ? `TIMED OUT — No response`
+                        : `DECISION: REJECTED`}
                     </span>
+
+                    {/* Live countdown badge — only shown while pending */}
+                    {isPending && evt.data.expiresAt && (
+                      <div className="ml-auto">
+                        <ApprovalCountdown expiresAt={evt.data.expiresAt} />
+                      </div>
+                    )}
                   </div>
 
-                  {!decisionEvent && (
+                  {/* Pending description */}
+                  {isPending && (
                     <div className="mb-3 text-xs text-muted-foreground">
                       The agent wants to execute this tool. Policy requires your
                       approval.
                     </div>
                   )}
 
+                  {/* Expired description */}
+                  {isExpired && (
+                    <div className="mb-3 text-xs text-amber-600/80 dark:text-amber-400/80">
+                      No decision was made within the allowed time. The tool
+                      call was automatically rejected.
+                    </div>
+                  )}
+
+                  {/* Arguments */}
                   <pre className="mb-3 max-h-40 overflow-x-auto rounded border border-foreground/5 bg-background/50 p-2 text-xs whitespace-pre-wrap">
                     {JSON.stringify(evt.data.arguments, null, 2)}
                   </pre>
 
-                  {!decisionEvent && (
+                  {/* Action buttons — only shown while pending */}
+                  {isPending && (
                     <div className="mt-2 flex items-center gap-2">
                       <Button
                         size="sm"
+                        id={`approve-${evt.data.approvalId}`}
                         className="w-full bg-green-600 text-white hover:bg-green-700"
                         onClick={() =>
                           handleApproval(evt.data.approvalId, "APPROVED")
@@ -380,13 +495,14 @@ export default function ConversationPage() {
                       </Button>
                       <Button
                         size="sm"
+                        id={`reject-${evt.data.approvalId}`}
                         variant="destructive"
                         className="w-full"
                         onClick={() =>
                           handleApproval(evt.data.approvalId, "DENIED")
                         }
                       >
-                        Deny
+                        Reject
                       </Button>
                     </div>
                   )}

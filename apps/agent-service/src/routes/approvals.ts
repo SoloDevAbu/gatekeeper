@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify"
 import type { ApprovalDecisionRequest } from "@repo/types"
-import { updateApprovalRequestStatus, getAllApprovalRequests } from "@repo/db/queries"
+import {
+  updateApprovalRequestStatus,
+  getAllApprovalRequests,
+  getPendingApprovalsByConversation,
+} from "@repo/db/queries"
 
 export default async function approvalRoutes(fastify: FastifyInstance) {
   fastify.get("/api/approvals", async () => {
@@ -10,6 +14,16 @@ export default async function approvalRoutes(fastify: FastifyInstance) {
   fastify.get("/api/approvals/history", async () => {
     return getAllApprovalRequests()
   })
+
+  /** Pending approvals for a specific conversation — used for re-hydration when user returns to a chat. */
+  fastify.get<{ Params: { conversationId: string } }>(
+    "/api/approvals/pending/:conversationId",
+    async (req) => {
+      const { conversationId } = req.params
+      return getPendingApprovalsByConversation(conversationId)
+    }
+  )
+
   fastify.post<{ Params: { id: string } }>("/api/approvals/:id/decide", async (req, reply) => {
     const { id } = req.params
     const body = req.body as ApprovalDecisionRequest

@@ -1,9 +1,13 @@
 import crypto from "node:crypto"
 import type { FastifyInstance } from "fastify"
 import type { ChatRequest } from "@repo/types"
-import { conversations } from "../store.js"
+import {
+  getConversationLogs,
+  insertConversationLogs,
+  getDistinctConversationIds,
+} from "@repo/db/queries"
+import type { Content } from "@google/genai"
 import { runAgentLoop } from "../agent/loop.js"
-import { GeminiClient } from "../agent/gemini-client.js"
 
 export default async function chatRoutes(fastify: FastifyInstance) {
   fastify.post("/api/chat", async (req, reply) => {
@@ -16,13 +20,30 @@ export default async function chatRoutes(fastify: FastifyInstance) {
     }
 
     const conversationId = body.conversationId ?? crypto.randomUUID()
-    const history = conversations.get(conversationId) ?? []
+
+    const dbLogs = await getConversationLogs(conversationId)
+
+    const history: Content[] = dbLogs.map((log) => ({
+      role: log.role === "user" ? "user" : "model",
+      parts: [{ text: log.content }],
+    }))
 
     const result = await runAgentLoop(body.message, conversationId, history, fastify.agentDeps)
 
-    history.push(GeminiClient.userMessage(body.message))
-    history.push({ role: "model", parts: [{ text: result.response }] })
-    conversations.set(conversationId, history)
+    await insertConversationLogs([
+      {
+        conversationId,
+        role: "user",
+        content: body.message,
+        metadata: {},
+      },
+      {
+        conversationId,
+        role: "assistant",
+        content: result.response,
+        metadata: { tokenCount: result.tokenCount },
+      },
+    ])
 
     fastify.policyEngine.trackTokenUsage(conversationId, result.tokenCount)
 
@@ -30,5 +51,15 @@ export default async function chatRoutes(fastify: FastifyInstance) {
       conversationId: result.conversationId,
       response: result.response,
     }
+  })
+
+  fastify.get("/api/conversations", async () => {
+    return getDistinctConversationIds()
+  })
+
+  fastify.get<{ Params: { id: string } }>("/api/conversations/:id", async (req) => {
+    const { id } = req.params
+
+    return getConversationLogs(id)
   })
 }

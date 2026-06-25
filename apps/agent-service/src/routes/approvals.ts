@@ -1,11 +1,15 @@
 import type { FastifyInstance } from "fastify"
 import type { ApprovalDecisionRequest } from "@repo/types"
+import { updateApprovalRequestStatus, getAllApprovalRequests } from "@repo/db/queries"
 
 export default async function approvalRoutes(fastify: FastifyInstance) {
   fastify.get("/api/approvals", async () => {
     return fastify.approvalQueue.getPending()
   })
 
+  fastify.get("/api/approvals/history", async () => {
+    return getAllApprovalRequests()
+  })
   fastify.post<{ Params: { id: string } }>("/api/approvals/:id/decide", async (req, reply) => {
     const { id } = req.params
     const body = req.body as ApprovalDecisionRequest
@@ -23,6 +27,8 @@ export default async function approvalRoutes(fastify: FastifyInstance) {
       error.statusCode = 404
       throw error
     }
+
+    await updateApprovalRequestStatus(id, body.decision, "admin")
 
     return { success: true, approvalId: id, decision: body.decision }
   })

@@ -1,5 +1,5 @@
 /**
- * ApprovalQueue — Promise-based in-memory approval workflow.
+ * ApprovalQueue — Promise-based approval workflow with DB persistence.
  *
  * When the policy engine returns REQUIRE_APPROVAL, the agent loop calls
  * `createPending(intent, timeoutMs)` which returns a Promise that BLOCKS
@@ -15,10 +15,12 @@ import type {
   ApprovalDecision,
   PendingApprovalSummary,
 } from "@repo/types"
+import { createToolIntent, createApprovalRequest, updateApprovalRequestStatus } from "@repo/db/queries"
 import { eventBus } from "../events/event-bus.js"
 
 interface PendingEntry {
   approvalId: string
+  intentId: string
   intent: ToolExecutionIntent
   createdAt: Date
   expiresAt: Date
@@ -46,6 +48,23 @@ export class ApprovalQueue {
     const now = new Date()
     const expiresAt = new Date(now.getTime() + timeout)
 
+    const intentRecord = await createToolIntent({
+      conversationId: intent.conversationId,
+      toolName: intent.toolName,
+      mcpServer: intent.mcpServer,
+      arguments: intent.arguments,
+      decision: "REQUIRE_APPROVAL",
+    })
+
+    const intentId = intentRecord!.id
+
+    await createApprovalRequest({
+      id: approvalId,
+      intentId,
+      status: "PENDING",
+      expiresAt,
+    })
+
     eventBus.emitSSE(
       "approval_requested",
       {
@@ -66,6 +85,7 @@ export class ApprovalQueue {
 
       this.pending.set(approvalId, {
         approvalId,
+        intentId,
         intent,
         createdAt: now,
         expiresAt,
@@ -77,7 +97,7 @@ export class ApprovalQueue {
 
   /**
    * Resolve a pending approval (called by the REST endpoint).
-   * This unblocks the agent loop's awaiting Promise.
+   * This unblocks the agent loop's awaiting Promise and updates DB.
    */
   resolve(approvalId: string, decision: ApprovalDecision): boolean {
     const entry = this.pending.get(approvalId)
@@ -86,6 +106,10 @@ export class ApprovalQueue {
     clearTimeout(entry.timer)
     this.pending.delete(approvalId)
     entry.resolve(decision)
+
+    updateApprovalRequestStatus(approvalId, decision, "admin")
+      .then(() => {})
+      .catch((err) => console.error("[approval-queue] DB update failed:", err))
 
     eventBus.emitSSE(
       "approval_decided",
@@ -107,6 +131,10 @@ export class ApprovalQueue {
     this.pending.delete(approvalId)
     entry.resolve("DENIED")
 
+    updateApprovalRequestStatus(approvalId, "EXPIRED")
+      .then(() => {})
+      .catch((err) => console.error("[approval-queue] DB expire update failed:", err))
+
     eventBus.emitSSE(
       "approval_decided",
       { approvalId, decision: "EXPIRED" as const },
@@ -123,7 +151,7 @@ export class ApprovalQueue {
     for (const [, entry] of this.pending) {
       summaries.push({
         approvalId: entry.approvalId,
-        intentId: entry.approvalId,
+        intentId: entry.intentId,
         toolName: entry.intent.toolName,
         mcpServer: entry.intent.mcpServer,
         arguments: entry.intent.arguments,

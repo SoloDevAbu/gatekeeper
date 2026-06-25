@@ -22,6 +22,7 @@
 import type { Content, FunctionDeclaration } from "@google/genai"
 import type { ToolExecutionIntent } from "@repo/types"
 import type { PolicyEngine } from "@repo/policy-engine"
+import { getAllPolicyRules, createToolIntent } from "@repo/db/queries"
 import { GeminiClient } from "./gemini-client.js"
 import { convertToGeminiTools } from "./tool-converter.js"
 import type { MCPManager } from "../mcp/manager.js"
@@ -72,6 +73,9 @@ export async function runAgentLoop(
 
   let totalTokens = 0
   let iteration = 0
+
+  const dbRules = await getAllPolicyRules()
+  policyEngine.reloadRules(dbRules)
 
   eventBus.emitSSE("thinking", {}, conversationId)
 
@@ -124,6 +128,15 @@ export async function runAgentLoop(
 
       switch (decision.action) {
         case "ALLOW": {
+          await createToolIntent({
+            conversationId,
+            toolName,
+            mcpServer: serverName,
+            arguments: args,
+            decision: "ALLOW",
+            matchedRuleId: decision.ruleId ?? null,
+          })
+
           try {
             const result = await mcpManager.executeTool(toolName, args)
 
@@ -159,6 +172,15 @@ export async function runAgentLoop(
         }
 
         case "BLOCK": {
+          await createToolIntent({
+            conversationId,
+            toolName,
+            mcpServer: serverName,
+            arguments: args,
+            decision: "BLOCK",
+            matchedRuleId: decision.ruleId ?? null,
+          })
+
           functionResponseContent = {
             error: `Blocked by policy: ${decision.reason ?? "This tool is not allowed."}`,
           }

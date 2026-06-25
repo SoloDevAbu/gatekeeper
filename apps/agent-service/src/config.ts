@@ -22,7 +22,7 @@ export const config = {
   geminiApiKey: process.env["GEMINI_API_KEY"] ?? "",
 
   /** Gemini model to use */
-  geminiModel: process.env["GEMINI_MODEL"] ?? "gemini-2.5-flash-lite",
+  geminiModel: process.env["GEMINI_MODEL"] ?? "gemini-2.5-flash",
 
   /** Database URL */
   databaseUrl: process.env["DATABASE_URL"] ?? "",

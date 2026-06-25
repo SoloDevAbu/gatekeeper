@@ -4,6 +4,7 @@ import { loadMCPServerConfigs } from "../mcp/config-loader.js"
 import { PolicyEngine } from "@repo/policy-engine"
 import { ApprovalQueue } from "../approval/queue.js"
 import { GeminiClient } from "../agent/gemini-client.js"
+import { getAllPolicyRules } from "@repo/db/queries"
 import type { AgentLoopDeps } from "../agent/loop.js"
 
 declare module "fastify" {
@@ -27,6 +28,11 @@ export default fp(async function servicesPlugin(fastify) {
   fastify.log.info(`[boot] ${tools.length} tool(s) available`)
 
   const policyEngine = new PolicyEngine()
+
+  const dbRules = await getAllPolicyRules()
+  policyEngine.reloadRules(dbRules)
+  fastify.log.info(`[boot] Loaded ${dbRules.length} policy rule(s) from database`)
+
   const approvalQueue = new ApprovalQueue()
   const gemini = new GeminiClient()
 

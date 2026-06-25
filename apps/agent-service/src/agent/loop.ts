@@ -199,16 +199,11 @@ export async function runAgentLoop(
         }
 
         case "REQUIRE_APPROVAL": {
-          eventBus.emitSSE(
-            "tool_call_intent",
-            { toolName, serverName, arguments: args },
-            conversationId
-          )
-
           try {
             const approvalDecision = await approvalQueue.createPending(
               intent,
-              decision.timeoutMs
+              decision.timeoutMs,
+              decision.ruleId ?? null
             )
 
             if (approvalDecision === "APPROVED") {

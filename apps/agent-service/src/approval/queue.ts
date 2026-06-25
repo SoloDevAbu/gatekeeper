@@ -41,7 +41,8 @@ export class ApprovalQueue {
    */
   async createPending(
     intent: ToolExecutionIntent,
-    timeoutMs?: number
+    timeoutMs?: number,
+    matchedRuleId?: string | null
   ): Promise<ApprovalDecision> {
     const approvalId = crypto.randomUUID()
     const timeout = timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -54,6 +55,7 @@ export class ApprovalQueue {
       mcpServer: intent.mcpServer,
       arguments: intent.arguments,
       decision: "REQUIRE_APPROVAL",
+      matchedRuleId: matchedRuleId ?? null,
     })
 
     const intentId = intentRecord!.id

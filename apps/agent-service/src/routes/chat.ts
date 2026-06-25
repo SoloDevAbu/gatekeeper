@@ -4,7 +4,7 @@ import type { ChatRequest } from "@repo/types"
 import {
   getConversationLogs,
   insertConversationLogs,
-  getDistinctConversationIds,
+  getConversationSummaries,
 } from "@repo/db/queries"
 import type { Content } from "@google/genai"
 import { runAgentLoop } from "../agent/loop.js"
@@ -54,7 +54,7 @@ export default async function chatRoutes(fastify: FastifyInstance) {
   })
 
   fastify.get("/api/conversations", async () => {
-    return getDistinctConversationIds()
+    return getConversationSummaries()
   })
 
   fastify.get<{ Params: { id: string } }>("/api/conversations/:id", async (req) => {

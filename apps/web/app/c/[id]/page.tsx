@@ -482,11 +482,11 @@ export default function ConversationPage() {
 
                   {/* Action buttons — only shown while pending */}
                   {isPending && (
-                    <div className="mt-2 flex items-center gap-2">
+                    <div className="mt-2 flex w-full items-center gap-2">
                       <Button
                         size="sm"
                         id={`approve-${evt.data.approvalId}`}
-                        className="w-full bg-green-600 text-white hover:bg-green-700"
+                        className="flex-1 bg-green-600 text-white hover:bg-green-700"
                         onClick={() =>
                           handleApproval(evt.data.approvalId, "APPROVED")
                         }
@@ -497,7 +497,7 @@ export default function ConversationPage() {
                         size="sm"
                         id={`reject-${evt.data.approvalId}`}
                         variant="destructive"
-                        className="w-full"
+                        className="flex-1"
                         onClick={() =>
                           handleApproval(evt.data.approvalId, "DENIED")
                         }

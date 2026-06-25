@@ -8,6 +8,14 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./src/schema.ts",
+      "default": "./dist/schema.js"
+    },
+    "./queries": {
+      "types": "./src/queries/index.ts",
+      "default": "./dist/queries/index.js"
     }
   },
   "scripts": {

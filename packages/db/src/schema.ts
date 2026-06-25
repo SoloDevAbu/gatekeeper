@@ -8,6 +8,7 @@ import {
   text,
   jsonb,
   timestamp,
+  unique
 } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
 
@@ -114,6 +115,17 @@ export const approvalRequestsRelations = relations(
   })
 )
 
+export const vaultSecrets = pgTable("vault_secrets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  namespace: varchar("namespace", { length: 100 }).notNull(), // "prod" | "dev"
+  key: varchar("key", { length: 255 }).notNull(),            // "stripe_key", "openai_key"
+  value: text("value").notNull(),                            // the actual secret value
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  uniqueNamespaceKey: unique().on(table.namespace, table.key),
+}));
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type PolicyRule = typeof policyRules.$inferSelect
@@ -127,3 +139,6 @@ export type NewApprovalRequest = typeof approvalRequests.$inferInsert
 
 export type ConversationLog = typeof conversationLogs.$inferSelect
 export type NewConversationLog = typeof conversationLogs.$inferInsert
+
+export type VaultSecret = typeof vaultSecrets.$inferSelect
+export type NewVaultSecret = typeof vaultSecrets.$inferInsert

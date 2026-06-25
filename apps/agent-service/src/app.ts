@@ -27,7 +27,7 @@ export async function buildApp() {
   const app = Fastify({
     logger: getLoggerConfig(),
     disableRequestLogging: process.env.NODE_ENV !== "development",
-    pluginTimeout: 30000,
+    pluginTimeout: 120000, // Increased to allow npx to download MCP servers
   })
 
   // Register Core Plugins
